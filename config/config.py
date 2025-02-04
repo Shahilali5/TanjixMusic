@@ -15,7 +15,7 @@ API_HASH = getenv("API_HASH")
 BOT_TOKEN = getenv("BOT_TOKEN")
 
 # Get Your bot username
-BOT_USERNAME = getenv("BOT_USERNAME" , "TheChampuBot")
+BOT_USERNAME = getenv("BOT_USERNAME" , "UNKOWNxMusiceRoBot")
 
 # Get your mongo url from cloud.mongodb.com
 MONGO_DB_URI = getenv("MONGO_DB_URI", None)
@@ -39,7 +39,7 @@ EXTRA_PLUGINS = getenv(
 # Fill here the external plugins repo where plugins that you want to load
 EXTRA_PLUGINS_REPO = getenv(
     "EXTRA_PLUGINS_REPO",
-    "https://github.com/TheChampu/Extra-Plugin",
+    "https://github.com/Shahilali5/Extra-Plugin",
 )
 
 # Your folder name in your extra plugins repo where all plugins stored
@@ -67,7 +67,7 @@ HEROKU_API_KEY = getenv("HEROKU_API_KEY")
 
 UPSTREAM_REPO = getenv(
     "UPSTREAM_REPO",
-    "https://github.com/TheChampu/ChampuMusic",
+    "https://github.com/Shahilali5/ShahilxMusic",
 )
 UPSTREAM_BRANCH = getenv("UPSTREAM_BRANCH", "main")
 GIT_TOKEN = getenv(
@@ -76,10 +76,10 @@ GIT_TOKEN = getenv(
 
 # Only  Links formats are  accepted for this Var value.
 SUPPORT_CHANNEL = getenv(
-    "SUPPORT_CHANNEL", "https://t.me/akaChampu"
+    "SUPPORT_CHANNEL", "https://t.me/ShahilBotsList"
 )  # Example:- https://t.me/akaChampu
 SUPPORT_GROUP = getenv(
-    "SUPPORT_GROUP", "https://t.me/TheChampuClub"
+    "SUPPORT_GROUP", "https://t.me/+cESMS0KTiIZmNTg1"
 )  # Example:- https://t.me/TheChampuClub
 # Set it in True if you want to leave your assistant after a certain amount of time. [Set time via AUTO_LEAVE_ASSISTANT_TIME]
 AUTO_LEAVING_ASSISTANT = getenv("AUTO_LEAVING_ASSISTANT", True)
@@ -101,7 +101,7 @@ TELEGRAM_DOWNLOAD_EDIT_SLEEP = int(getenv("TELEGRAM_EDIT_SLEEP", 5))
 
 
 # Your Github Repo.. Will be shown on /start Command
-GITHUB_REPO = getenv("GITHUB_REPO", "https://github.com/TheChampu/ChampuMusic")
+GITHUB_REPO = getenv("GITHUB_REPO", "https://github.com/Shahilali5/ShahilxMusic")
 
 
 # Spotify Client.. Get it from https://developer.spotify.com/dashboard
@@ -140,16 +140,6 @@ STRING4 = getenv("STRING_SESSION4", None)
 STRING5 = getenv("STRING_SESSION5", None)
 
 
-
-#   ░█████╗░██╗░░██╗░█████╗░███╗░░░███╗██████╗░██╗░░░██╗
-#   ██╔══██╗██║░░██║██╔══██╗████╗░████║██╔══██╗██║░░░██║
-#   ██║░░╚═╝███████║███████║██╔████╔██║██████╔╝██║░░░██║
-#   ██║░░██╗██╔══██║██╔══██║██║╚██╔╝██║██╔═══╝░██║░░░██║
-#   ╚█████╔╝██║░░██║██║░░██║██║░╚═╝░██║██║░░░░░╚██████╔╝
-#   ░╚════╝░╚═╝░░╚═╝╚═╝░░╚═╝╚═╝░░░░░╚═╝╚═╝░░░░░░╚═════╝░     
-
-
-
 ### DONT TOUCH or EDIT codes after this line
 BANNED_USERS = filters.user()
 YTDOWNLOADER = 1
@@ -169,42 +159,42 @@ autoclean = []
 
 START_IMG_URL = getenv(
     "START_IMG_URL",
-    "https://telegra.ph/file/d3e855bc548a1ce9649e7.jpg",
+    "https://te.legra.ph/file/71ac5c314d1af0d00a128-13be9eae02043dbd3f.jpg",
 )
 
 PING_IMG_URL = getenv(
     "PING_IMG_URL",
-    "https://telegra.ph/file/33591be403ae3eaae7217.jpg",
+    "https://te.legra.ph/file/71ac5c314d1af0d00a128-13be9eae02043dbd3f.jpg",
 )
 
 PLAYLIST_IMG_URL = getenv(
     "PLAYLIST_IMG_URL",
-    "https://telegra.ph/file/b860df3e144c2208a7e5a.jpg",
+    "https://te.legra.ph/file/71ac5c314d1af0d00a128-13be9eae02043dbd3f.jpg",
 )
 
 GLOBAL_IMG_URL = getenv(
     "GLOBAL_IMG_URL",
-    "https://telegra.ph/file/a9d91437d795b0ae55af8.jpg",
+    "https://te.legra.ph/file/71ac5c314d1af0d00a128-13be9eae02043dbd3f.jpg",
 )
 
 STATS_IMG_URL = getenv(
     "STATS_IMG_URL",
-    "https://telegra.ph/file/a9d91437d795b0ae55af8.jpg",
+    "https://te.legra.ph/file/71ac5c314d1af0d00a128-13be9eae02043dbd3f.jpg",
 )
 
 TELEGRAM_AUDIO_URL = getenv(
     "TELEGRAM_AUDIO_URL",
-    "https://telegra.ph/file/84492c50c7a8a8d2603dc.jpg",
+    "https://te.legra.ph/file/71ac5c314d1af0d00a128-13be9eae02043dbd3f.jpg",
 )
 
 TELEGRAM_VIDEO_URL = getenv(
     "TELEGRAM_VIDEO_URL",
-    "https://telegra.ph/file/84492c50c7a8a8d2603dc.jpg",
+    "https://te.legra.ph/file/71ac5c314d1af0d00a128-13be9eae02043dbd3f.jpg",
 )
 
 STREAM_IMG_URL = getenv(
     "STREAM_IMG_URL",
-    "https://telegra.ph/file/62f26ca46103beee9a0d5.jpg",
+    "https://te.legra.ph/file/71ac5c314d1af0d00a128-13be9eae02043dbd3f.jpg",
 )
 
 SOUNCLOUD_IMG_URL = getenv(
@@ -270,7 +260,7 @@ if GITHUB_REPO:
 
 
 if PING_IMG_URL:
-    if PING_IMG_URL != "https://telegra.ph/file/33591be403ae3eaae7217.jpg":
+    if PING_IMG_URL != "https://te.legra.ph/file/71ac5c314d1af0d00a128-13be9eae02043dbd3f.jpg":
         if not re.match("(?:http|https)://", PING_IMG_URL):
             print(
                 "[ERROR] - Your PING_IMG_URL url is wrong. Please ensure that it starts with https://"
@@ -278,7 +268,7 @@ if PING_IMG_URL:
 
 
 if PLAYLIST_IMG_URL:
-    if PLAYLIST_IMG_URL != "https://telegra.ph/file/b860df3e144c2208a7e5a.jpg":
+    if PLAYLIST_IMG_URL != "https://te.legra.ph/file/71ac5c314d1af0d00a128-13be9eae02043dbd3f.jpg":
         if not re.match("(?:http|https)://", PLAYLIST_IMG_URL):
             print(
                 "[ERROR] - Your PLAYLIST_IMG_URL url is wrong. Please ensure that it starts with https://"
@@ -286,7 +276,7 @@ if PLAYLIST_IMG_URL:
 
 
 if GLOBAL_IMG_URL:
-    if GLOBAL_IMG_URL != "https://telegra.ph/file/a9d91437d795b0ae55af8.jpg":
+    if GLOBAL_IMG_URL != "https://te.legra.ph/file/71ac5c314d1af0d00a128-13be9eae02043dbd3f.jpg":
         if not re.match("(?:http|https)://", GLOBAL_IMG_URL):
             print(
                 "[ERROR] - Your GLOBAL_IMG_URL url is wrong. Please ensure that it starts with https://"
@@ -294,7 +284,7 @@ if GLOBAL_IMG_URL:
 
 
 if STATS_IMG_URL:
-    if STATS_IMG_URL != "https://telegra.ph/file/a9d91437d795b0ae55af8.jpg":
+    if STATS_IMG_URL != "https://te.legra.ph/file/71ac5c314d1af0d00a128-13be9eae02043dbd3f.jpg":
         if not re.match("(?:http|https)://", STATS_IMG_URL):
             print(
                 "[ERROR] - Your STATS_IMG_URL url is wrong. Please ensure that it starts with https://"
@@ -302,7 +292,7 @@ if STATS_IMG_URL:
 
 
 if TELEGRAM_AUDIO_URL:
-    if TELEGRAM_AUDIO_URL != "https://telegra.ph/file/84492c50c7a8a8d2603dc.jpg":
+    if TELEGRAM_AUDIO_URL != "https://te.legra.ph/file/71ac5c314d1af0d00a128-13be9eae02043dbd3f.jpg":
         if not re.match("(?:http|https)://", TELEGRAM_AUDIO_URL):
             print(
                 "[ERROR] - Your TELEGRAM_AUDIO_URL url is wrong. Please ensure that it starts with https://"
@@ -310,7 +300,7 @@ if TELEGRAM_AUDIO_URL:
 
 
 if STREAM_IMG_URL:
-    if STREAM_IMG_URL != "https://telegra.ph/file/62f26ca46103beee9a0d5.jpg":
+    if STREAM_IMG_URL != "https://te.legra.ph/file/71ac5c314d1af0d00a128-13be9eae02043dbd3f.jpg":
         if not re.match("(?:http|https)://", STREAM_IMG_URL):
             print(
                 "[ERROR] - Your STREAM_IMG_URL url is wrong. Please ensure that it starts with https://"
@@ -334,7 +324,7 @@ if YOUTUBE_IMG_URL:
 
 
 if TELEGRAM_VIDEO_URL:
-    if TELEGRAM_VIDEO_URL != "https://telegra.ph/file/84492c50c7a8a8d2603dc.jpg":
+    if TELEGRAM_VIDEO_URL != "https://te.legra.ph/file/71ac5c314d1af0d00a128-13be9eae02043dbd3f.jpg":
         if not re.match("(?:http|https)://", TELEGRAM_VIDEO_URL):
             print(
                 "[ERROR] - Your TELEGRAM_VIDEO_URL url is wrong. Please ensure that it starts with https://"
