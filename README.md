@@ -1,5 +1,5 @@
 <h2 align="center">
-    「 𝕮𝖍𝖆𝖒𝖕𝖚 」</h2>
+    「 Shahil 」</h2>
 
 <p align="center">
   <img src="https://github.com/ShahilxMusic/blob/main/Shahilali5.gif">
