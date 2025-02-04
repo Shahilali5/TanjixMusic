@@ -1,514 +1,801 @@
-from pyrogram import filters
-from pyrogram.enums import ChatType
-from pyrogram.errors import MessageNotModified
-from pyrogram.types import (
-    CallbackQuery,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Message,
-)
+import re
+from math import ceil
+from typing import Union
 
-from config import BANNED_USERS, CLEANMODE_DELETE_MINS, OWNER_ID
-from strings import get_command
-from ChampuMusic import app
-from ChampuMusic.utils.database import (
-    add_nonadmin_chat,
-    cleanmode_off,
-    cleanmode_on,
-    commanddelete_off,
-    commanddelete_on,
-    get_aud_bit_name,
-    get_authuser,
-    get_authuser_names,
-    get_playmode,
-    get_playtype,
-    get_vid_bit_name,
-    is_cleanmode_on,
-    is_commanddelete_on,
-    is_nonadmin_chat,
-    remove_nonadmin_chat,
-    save_audio_bitrate,
-    save_video_bitrate,
-    set_playmode,
-    set_playtype,
-)
-from ChampuMusic.utils.decorators.admins import ActualAdminCB
-from ChampuMusic.utils.decorators.language import language, languageCB
-from ChampuMusic.utils.inline.settings import (
-    audio_quality_markup,
-    auth_users_markup,
-    cleanmode_settings_markup,
-    playmode_users_markup,
-    setting_markup,
-    video_quality_markup,
-)
-from ChampuMusic.utils.inline.start import private_panel
+from pyrogram import Client, filters, types
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+
+import config
+from config import BANNED_USERS, START_IMG_URL
+from strings import get_command, get_string
+from ChampuMusic import HELPABLE, app
+from ChampuMusic.utils.database import get_lang, is_commanddelete_on
+from ChampuMusic.utils.decorators.language import LanguageStart
+from ChampuMusic.utils.inline.help import private_help_panel
 
 ### Command
-SETTINGS_COMMAND = get_command("SETTINGS_COMMAND")
+HELP_COMMAND = get_command("HELP_COMMAND")
+
+COLUMN_SIZE = 4
+NUM_COLUMNS = 3
 
 
-@app.on_message(filters.command(SETTINGS_COMMAND) & filters.group & ~BANNED_USERS)
-@language
-async def settings_mar(client, message: Message, _):
-    buttons = setting_markup(_)
-    await message.reply_text(
-        _["setting_1"].format(message.chat.title, message.chat.id),
-        reply_markup=InlineKeyboardMarkup(buttons),
-    )
+
+class EqInlineKeyboardButton(InlineKeyboardButton):
+    def __eq__(self, other):
+        return self.text == other.text
+
+    def __lt__(self, other):
+        return self.text < other.text
+
+    def __gt__(self, other):
+        return self.text > other.text
 
 
-@app.on_callback_query(filters.regex("settings_helper") & ~BANNED_USERS)
-@languageCB
-async def settings_cb(client, CallbackQuery, _):
-    try:
-        await CallbackQuery.answer(_["set_cb_8"])
-    except:
-        pass
-    buttons = setting_markup(_)
-    return await CallbackQuery.edit_message_text(
-        _["setting_1"].format(
-            CallbackQuery.message.chat.title,
-            CallbackQuery.message.chat.id,
-        ),
-        reply_markup=InlineKeyboardMarkup(buttons),
-    )
-
-
-@app.on_callback_query(filters.regex("settingsback_helper") & ~BANNED_USERS)
-@languageCB
-async def settings_back_markup(client, CallbackQuery: CallbackQuery, _):
-    try:
-        await CallbackQuery.answer()
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
-    if CallbackQuery.message.chat.type == ChatType.PRIVATE:
-        try:
-            await app.resolve_peer(OWNER_ID[0])
-            OWNER = OWNER_ID[0]
-        except:
-            OWNER = None
-        buttons = private_panel(_)
-        try:
-            await CallbackQuery.edit_message_text(
-                _["start_2"],
-                reply_markup=InlineKeyboardMarkup(buttons),
-            )
-        except MessageNotModified:
-            pass
+def paginate_modules(page_n, module_dict, prefix, chat=None, close: bool = False):
+    if not chat:
+        modules = sorted(
+            [
+                EqInlineKeyboardButton(
+                    x.__MODULE__,
+                    callback_data="{}_module({},{})".format(
+                        prefix, x.__MODULE__.lower(), page_n
+                    ),
+                )
+                for x in module_dict.values()
+            ]
+        )
     else:
-        buttons = setting_markup(_)
-        try:
-            await CallbackQuery.edit_message_reply_markup(
-                reply_markup=InlineKeyboardMarkup(buttons)
+        modules = sorted(
+            [
+                EqInlineKeyboardButton(
+                    x.__MODULE__,
+                    callback_data="{}_module({},{},{})".format(
+                        prefix, chat, x.__MODULE__.lower(), page_n
+                    ),
+                )
+                for x in module_dict.values()
+            ]
+        )
+
+    pairs = [modules[i : i + NUM_COLUMNS] for i in range(0, len(modules), NUM_COLUMNS)]
+
+    max_num_pages = ceil(len(pairs) / COLUMN_SIZE) if len(pairs) > 0 else 1
+    modulo_page = page_n % max_num_pages
+
+    if len(pairs) > COLUMN_SIZE:
+        pairs = pairs[modulo_page * COLUMN_SIZE : COLUMN_SIZE * (modulo_page + 1)] + [
+            (
+                EqInlineKeyboardButton(
+                    "❮",
+                    callback_data="{}_prev({})".format(
+                        prefix,
+                        modulo_page - 1 if modulo_page > 0 else max_num_pages - 1,
+                    ),
+                ),
+                EqInlineKeyboardButton(
+                    "ᴄʟᴏsᴇ" if close else "Bᴀᴄᴋ",
+                    callback_data="close" if close else "feature",
+                ),
+                EqInlineKeyboardButton(
+                    "❯",
+                    callback_data="{}_next({})".format(prefix, modulo_page + 1),
+                ),
             )
-        except MessageNotModified:
-            pass
-
-
-## Audio and Video Quality
-async def gen_buttons_aud(_, aud):
-    if aud == "STUDIO":
-        buttons = audio_quality_markup(_, STUDIO=True)
-    elif aud == "HIGH":
-        buttons = audio_quality_markup(_, HIGH=True)
-    elif aud == "MEDIUM":
-        buttons = audio_quality_markup(_, MEDIUM=True)
-    elif aud == "LOW":
-        buttons = audio_quality_markup(_, LOW=True)
-    return buttons
-
-
-async def gen_buttons_vid(_, aud):
-    if aud == "UHD_4K":
-        buttons = video_quality_markup(_, UHD_4K=True)
-    elif aud == "QHD_2K":
-        buttons = video_quality_markup(_, QHD_2K=True)
-    elif aud == "FHD_1080p":
-        buttons = video_quality_markup(_, FHD_1080p=True)
-    elif aud == "HD_720p":
-        buttons = video_quality_markup(_, HD_720p=True)
-    elif aud == "SD_480p":
-        buttons = video_quality_markup(_, SD_480p=True)
-    elif aud == "SD_360p":
-        buttons = video_quality_markup(_, SD_360p=True)
-    return buttons
-
-
-# without admin rights
-
-
-@app.on_callback_query(
-    filters.regex(
-        pattern=r"^(SEARCHANSWER|PLAYMODEANSWER|PLAYTYPEANSWER|AUTHANSWER|CMANSWER|COMMANDANSWER|CM|AQ|VQ|PM|AU)$"
-    )
-    & ~BANNED_USERS
-)
-@languageCB
-async def without_Admin_rights(client, CallbackQuery, _):
-    command = CallbackQuery.matches[0].group(1)
-    if command == "SEARCHANSWER":
-        try:
-            return await CallbackQuery.answer(_["setting_3"], show_alert=True)
-        except:
-            return
-    if command == "PLAYMODEANSWER":
-        try:
-            return await CallbackQuery.answer(_["setting_10"], show_alert=True)
-        except:
-            return
-    if command == "PLAYTYPEANSWER":
-        try:
-            return await CallbackQuery.answer(_["setting_11"], show_alert=True)
-        except:
-            return
-    if command == "AUTHANSWER":
-        try:
-            return await CallbackQuery.answer(_["setting_4"], show_alert=True)
-        except:
-            return
-    if command == "CMANSWER":
-        try:
-            return await CallbackQuery.answer(
-                _["setting_9"].format(CLEANMODE_DELETE_MINS),
-                show_alert=True,
-            )
-        except:
-            return
-    if command == "COMMANDANSWER":
-        try:
-            return await CallbackQuery.answer(_["setting_14"], show_alert=True)
-        except:
-            return
-    if command == "CM":
-        try:
-            await CallbackQuery.answer(_["set_cb_5"], show_alert=True)
-        except:
-            pass
-        sta = None
-        cle = None
-        if await is_cleanmode_on(CallbackQuery.message.chat.id):
-            cle = True
-        if await is_commanddelete_on(CallbackQuery.message.chat.id):
-            sta = True
-        buttons = cleanmode_settings_markup(_, status=cle, dels=sta)
-
-    if command == "AQ":
-        try:
-            await CallbackQuery.answer(_["set_cb_1"], show_alert=True)
-        except:
-            pass
-        aud = await get_aud_bit_name(CallbackQuery.message.chat.id)
-        buttons = await gen_buttons_aud(_, aud)
-    if command == "VQ":
-        try:
-            await CallbackQuery.answer(_["set_cb_2"], show_alert=True)
-        except:
-            pass
-        aud = await get_vid_bit_name(CallbackQuery.message.chat.id)
-        buttons = await gen_buttons_vid(_, aud)
-    if command == "PM":
-        try:
-            await CallbackQuery.answer(_["set_cb_4"], show_alert=True)
-        except:
-            pass
-        playmode = await get_playmode(CallbackQuery.message.chat.id)
-        if playmode == "Direct":
-            Direct = True
-        else:
-            Direct = None
-        is_non_admin = await is_nonadmin_chat(CallbackQuery.message.chat.id)
-        if not is_non_admin:
-            Group = True
-        else:
-            Group = None
-        playty = await get_playtype(CallbackQuery.message.chat.id)
-        if playty == "Everyone":
-            Playtype = None
-        else:
-            Playtype = True
-        buttons = playmode_users_markup(_, Direct, Group, Playtype)
-    if command == "AU":
-        try:
-            await CallbackQuery.answer(_["set_cb_3"], show_alert=True)
-        except:
-            pass
-        is_non_admin = await is_nonadmin_chat(CallbackQuery.message.chat.id)
-        if not is_non_admin:
-            buttons = auth_users_markup(_, True)
-        else:
-            buttons = auth_users_markup(_)
-    try:
-        return await CallbackQuery.edit_message_reply_markup(
-            reply_markup=InlineKeyboardMarkup(buttons)
+        ]
+    else:
+        pairs.append(
+            [
+                EqInlineKeyboardButton(
+                    "ᴄʟᴏsᴇ" if close else "Bᴀᴄᴋ",
+                    callback_data="close" if close else "feature",
+                ),
+            ]
         )
-    except MessageNotModified:
-        return
+
+    return pairs
 
 
-# Audio Video Quality
-
-
-@app.on_callback_query(
-    filters.regex(
-        pattern=r"^(LOW|MEDIUM|HIGH|STUDIO|SD_360p|SD_480p|HD_720p|FHD_1080p|QHD_2K|UHD_4K)$"
-    )
-    & ~BANNED_USERS
-)
-@ActualAdminCB
-async def aud_vid_cb(client, CallbackQuery, _):
-    command = CallbackQuery.matches[0].group(1)
-    try:
-        await CallbackQuery.answer(_["set_cb_6"], show_alert=True)
-    except:
-        pass
-    if command == "LOW":
-        await save_audio_bitrate(CallbackQuery.message.chat.id, "LOW")
-        buttons = audio_quality_markup(_, LOW=True)
-    if command == "MEDIUM":
-        await save_audio_bitrate(CallbackQuery.message.chat.id, "MEDIUM")
-        buttons = audio_quality_markup(_, MEDIUM=True)
-    if command == "HIGH":
-        await save_audio_bitrate(CallbackQuery.message.chat.id, "HIGH")
-        buttons = audio_quality_markup(_, HIGH=True)
-    if command == "STUDIO":
-        await save_audio_bitrate(CallbackQuery.message.chat.id, "STUDIO")
-        buttons = audio_quality_markup(_, STUDIO=True)
-    if command == "SD_360p":
-        await save_video_bitrate(CallbackQuery.message.chat.id, "SD_360p")
-        buttons = video_quality_markup(_, SD_360p=True)
-    if command == "SD_480p":
-        await save_video_bitrate(CallbackQuery.message.chat.id, "SD_480p")
-        buttons = video_quality_markup(_, SD_480p=True)
-    if command == "HD_720p":
-        await save_video_bitrate(CallbackQuery.message.chat.id, "HD_720p")
-        buttons = video_quality_markup(_, HD_720p=True)
-    if command == "FHD_1080p":
-        await save_video_bitrate(CallbackQuery.message.chat.id, "FHD_1080p")
-        buttons = video_quality_markup(_, FHD_1080p=True)
-    if command == "QHD_2K":
-        await save_video_bitrate(CallbackQuery.message.chat.id, "QHD_2K")
-        buttons = video_quality_markup(_, QHD_2K=True)
-    if command == "UHD_4K":
-        await save_video_bitrate(CallbackQuery.message.chat.id, "UHD_4K")
-        buttons = video_quality_markup(_, UHD_4K=True)
-    try:
-        return await CallbackQuery.edit_message_reply_markup(
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-    except MessageNotModified:
-        return
-
-
-@app.on_callback_query(
-    filters.regex(pattern=r"^(CLEANMODE|COMMANDELMODE)$") & ~BANNED_USERS
-)
-@ActualAdminCB
-async def cleanmode_mark(client, CallbackQuery, _):
-    command = CallbackQuery.matches[0].group(1)
-    try:
-        await CallbackQuery.answer(_["set_cb_6"], show_alert=True)
-    except:
-        pass
-    if command == "CLEANMODE":
-        sta = None
-        if await is_commanddelete_on(CallbackQuery.message.chat.id):
-            sta = True
-        cle = None
-        if await is_cleanmode_on(CallbackQuery.message.chat.id):
-            await cleanmode_off(CallbackQuery.message.chat.id)
-        else:
-            await cleanmode_on(CallbackQuery.message.chat.id)
-            cle = True
-        buttons = cleanmode_settings_markup(_, status=cle, dels=sta)
-        return await CallbackQuery.edit_message_reply_markup(
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-    if command == "COMMANDELMODE":
-        cle = None
-        sta = None
-        if await is_cleanmode_on(CallbackQuery.message.chat.id):
-            cle = True
-        if await is_commanddelete_on(CallbackQuery.message.chat.id):
-            await commanddelete_off(CallbackQuery.message.chat.id)
-        else:
-            await commanddelete_on(CallbackQuery.message.chat.id)
-            sta = True
-        buttons = cleanmode_settings_markup(_, status=cle, dels=sta)
-    try:
-        return await CallbackQuery.edit_message_reply_markup(
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-    except MessageNotModified:
-        return
-
-
-# Play Mode Settings
-@app.on_callback_query(
-    filters.regex(pattern=r"^(|MODECHANGE|CHANNELMODECHANGE|PLAYTYPECHANGE)$")
-    & ~BANNED_USERS
-)
-@ActualAdminCB
-async def playmode_ans(client, CallbackQuery, _):
-    command = CallbackQuery.matches[0].group(1)
-    if command == "CHANNELMODECHANGE":
-        is_non_admin = await is_nonadmin_chat(CallbackQuery.message.chat.id)
-        if not is_non_admin:
-            await add_nonadmin_chat(CallbackQuery.message.chat.id)
-            Group = None
-        else:
-            await remove_nonadmin_chat(CallbackQuery.message.chat.id)
-            Group = True
-        playmode = await get_playmode(CallbackQuery.message.chat.id)
-        if playmode == "Direct":
-            Direct = True
-        else:
-            Direct = None
-        playty = await get_playtype(CallbackQuery.message.chat.id)
-        if playty == "Everyone":
-            Playtype = None
-        else:
-            Playtype = True
-        buttons = playmode_users_markup(_, Direct, Group, Playtype)
-    if command == "MODECHANGE":
+@app.on_message(filters.command(HELP_COMMAND) & filters.private & ~BANNED_USERS)
+@app.on_callback_query(filters.regex("settings_back_helper") & ~BANNED_USERS)
+async def helper_private(
+    client: app, update: Union[types.Message, types.CallbackQuery]
+):
+    is_callback = isinstance(update, types.CallbackQuery)
+    if is_callback:
         try:
-            await CallbackQuery.answer(_["set_cb_6"], show_alert=True)
+            await update.answer()
         except:
             pass
-        playmode = await get_playmode(CallbackQuery.message.chat.id)
-        if playmode == "Direct":
-            await set_playmode(CallbackQuery.message.chat.id, "Inline")
-            Direct = None
-        else:
-            await set_playmode(CallbackQuery.message.chat.id, "Direct")
-            Direct = True
-        is_non_admin = await is_nonadmin_chat(CallbackQuery.message.chat.id)
-        if not is_non_admin:
-            Group = True
-        else:
-            Group = None
-        playty = await get_playtype(CallbackQuery.message.chat.id)
-        if playty == "Everyone":
-            Playtype = False
-        else:
-            Playtype = True
-        buttons = playmode_users_markup(_, Direct, Group, Playtype)
-    if command == "PLAYTYPECHANGE":
-        try:
-            await CallbackQuery.answer(_["set_cb_6"], show_alert=True)
-        except:
-            pass
-        playty = await get_playtype(CallbackQuery.message.chat.id)
-        if playty == "Everyone":
-            await set_playtype(CallbackQuery.message.chat.id, "Admin")
-            Playtype = False
-        else:
-            await set_playtype(CallbackQuery.message.chat.id, "Everyone")
-            Playtype = True
-        playmode = await get_playmode(CallbackQuery.message.chat.id)
-        if playmode == "Direct":
-            Direct = True
-        else:
-            Direct = None
-        is_non_admin = await is_nonadmin_chat(CallbackQuery.message.chat.id)
-        if not is_non_admin:
-            Group = True
-        else:
-            Group = None
-        buttons = playmode_users_markup(_, Direct, Group, Playtype)
-    try:
-        return await CallbackQuery.edit_message_reply_markup(
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-    except MessageNotModified:
-        return
 
+        chat_id = update.message.chat.id
+        language = await get_lang(chat_id)
+        _ = get_string(language)
+        keyboard = InlineKeyboardMarkup(paginate_modules(0, HELPABLE, "help"))
 
-# Auth Users Settings
-@app.on_callback_query(filters.regex(pattern=r"^(AUTH|AUTHLIST)$") & ~BANNED_USERS)
-@ActualAdminCB
-async def authusers_mar(client, CallbackQuery, _):
-    command = CallbackQuery.matches[0].group(1)
-    if command == "AUTHLIST":
-        _authusers = await get_authuser_names(CallbackQuery.message.chat.id)
-        if not _authusers:
+        await update.edit_message_text(_["help_1"], reply_markup=keyboard)
+    else:
+        chat_id = update.chat.id
+        if await is_commanddelete_on(update.chat.id):
             try:
-                return await CallbackQuery.answer(_["setting_5"], show_alert=True)
-            except:
-                return
-        else:
-            try:
-                await CallbackQuery.answer(_["set_cb_7"], show_alert=True)
+                await update.delete()
             except:
                 pass
-            j = 0
-            await CallbackQuery.edit_message_text(_["auth_6"])
-            msg = _["auth_7"]
-            for note in _authusers:
-                _note = await get_authuser(CallbackQuery.message.chat.id, note)
-                user_id = _note["auth_user_id"]
-                admin_id = _note["admin_id"]
-                admin_name = _note["admin_name"]
-                try:
-                    user = await client.get_users(user_id)
-                    user = user.first_name
-                    j += 1
-                except Exception:
-                    continue
-                msg += f"{j}➤ {user}[`{user_id}`]\n"
-                msg += f"   {_['auth_8']} {admin_name}[`{admin_id}`]\n\n"
-            upl = InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            text=_["BACK_BUTTON"], callback_data=f"AU"
-                        ),
-                        InlineKeyboardButton(
-                            text=_["CLOSE_BUTTON"],
-                            callback_data=f"close",
-                        ),
-                    ]
-                ]
-            )
-            try:
-                return await CallbackQuery.edit_message_text(msg, reply_markup=upl)
-            except MessageNotModified:
-                return
-    try:
-        await CallbackQuery.answer(_["set_cb_6"], show_alert=True)
-    except:
-        pass
-    if command == "AUTH":
-        is_non_admin = await is_nonadmin_chat(CallbackQuery.message.chat.id)
-        if not is_non_admin:
-            await add_nonadmin_chat(CallbackQuery.message.chat.id)
-            buttons = auth_users_markup(_)
-        else:
-            await remove_nonadmin_chat(CallbackQuery.message.chat.id)
-            buttons = auth_users_markup(_, True)
-    try:
-        return await CallbackQuery.edit_message_reply_markup(
-            reply_markup=InlineKeyboardMarkup(buttons)
+        language = await get_lang(chat_id)
+        _ = get_string(language)
+        keyboard = InlineKeyboardMarkup(
+            paginate_modules(0, HELPABLE, "help", close=True)
         )
-    except MessageNotModified:
-        return
+        try:
+            if update.chat.photo:
+                userss_photo = await app.download_media(
+                    update.chat.photo.big_file_id,
+                )
+            else:
+                userss_photo = "assets/nodp.jpg"
+
+            chat_photo = userss_photo if userss_photo else START_IMG_URL
+        except AttributeError:
+            chat_photo = "assets/nodp.jpg"
+
+        await update.reply_photo(
+            photo=chat_photo,
+            caption=_["help_1"].format(config.SUPPORT_GROUP),
+            reply_markup=keyboard,
+        )
 
 
-"""✅<u>Gʀᴏᴜᴘ Sᴇᴛᴛɪɴɢs:</u>
-/settings - Gᴇᴛ ᴀ ᴄᴏᴍᴘʟᴇᴛᴇ ɢʀᴏᴜᴘ's sᴇᴛᴛɪɴɢs ᴡɪᴛʜ ɪɴʟɪɴᴇ ʙᴜᴛᴛᴏɴs
+@app.on_message(filters.command(HELP_COMMAND) & filters.group & ~BANNED_USERS)
+@LanguageStart
+async def help_com_group(client, message: Message, _):
+    try:
+        if message.chat.photo:
+            group_photo = await app.download_media(
+                message.chat.photo.big_file_id,
+            )
+        else:
+            group_photo = "assets/nodp.png"
 
-🔗 <u>Oᴘᴛɪᴏɴs ɪɴ Sᴇᴛᴛɪɴɢs:</u>
+        chat_photo = group_photo if group_photo else "assets/nodp.png"
+    except AttributeError:
+        chat_photo = "assets/nodp.png"
 
-1 Yᴏᴜ ᴄᴀɴ sᴇᴛ Aᴜᴅɪᴏ Qᴜᴀʟɪᴛʏ
-2 Yᴏᴜ ᴄᴀɴ sᴇᴛ Vɪᴅᴇᴏ Qᴜᴀʟɪᴛʏ
-3 **Aᴜᴛʜ Usᴇʀs**:- Yᴏᴜ ᴄᴀɴ ᴄʜᴀɴɢᴇ ᴀᴅᴍɪɴ ᴄᴏᴍᴍᴀɴᴅs ᴍᴏᴅᴇ ғʀᴏᴍ ʜᴇʀᴇ ᴛᴏ ᴇᴠᴇʀʏᴏɴᴇ ᴏʀ ᴀᴅᴍɪɴs ᴏɴʟʏ.
-4 **Cʟᴇᴀɴ Mᴏᴅᴇ:**ʙᴏᴛ's ᴅᴇʟᴇᴛᴇs ᴛʜᴇ ʙᴏᴛ's ᴍᴇssᴀɢᴇs ᴀғᴛᴇʀ 𝟻 ᴍɪɴs ғʀᴏᴍ ʏᴏᴜʀ ɢʀᴏᴜᴘ ᴛᴏ ᴍᴀᴋᴇ sᴜʀᴇ ʏᴏᴜʀ ᴄʜᴀᴛ ʀᴇᴍᴀɪɴs ᴄʟᴇᴀɴ ᴀɴᴅ ɢᴏᴏᴅ.
-5 **Cᴏᴍᴍᴀɴᴅ Cʟᴇᴀɴ** : Wʜᴇɴ ᴀᴄᴛɪᴠᴀᴛᴇᴅ, Bᴏᴛ ᴡɪʟʟ ᴅᴇʟᴇᴛᴇ ɪᴛs ᴇxᴇᴄᴜᴛᴇᴅ ᴄᴏᴍᴍᴀɴᴅs lɪᴍᴍᴇᴅɪᴀᴛᴇʟʏ.
-       <b><u>Pʟᴀʏ Sᴇᴛᴛɪɴɢs:</></b>
-/playmode - Gᴇᴛ ᴀ ᴄᴏᴍᴘʟᴇᴛᴇ ᴘʟᴀʏ sᴇᴛᴛɪɴɢs ᴘᴀɴᴇʟ ᴡɪᴛʜ ʙᴜᴛᴛᴏɴs ᴡʜᴇʀᴇ ʏᴏᴜ ᴄᴀɴ sᴇᴛ ʏᴏᴜʀ ɢʀᴏᴜᴘ's ᴘʟᴀʏ sᴇᴛᴛɪɴɢs. 
-      <b><u>Oᴘᴛɪᴏɴs ɪɴ Pʟᴀʏᴍᴏᴅᴇ:</u></b>
-1 **Sᴇᴀʀᴄʜ Mᴏᴅᴇ** [Dɪʀᴇᴄᴛ ᴏʀ Iɴʟɪɴᴇ] - Cʜᴀɴɢᴇs ʏᴏᴜʀ sᴇᴀʀᴄʜ ᴍᴏᴅᴇ ᴡʜɪʟᴇ ʏᴏᴜ ɢɪᴠᴇ /playmode
-2 **Aᴅᴍɪɴ Cᴏᴍᴍᴀɴᴅs** [Eᴠᴇʀʏᴏɴᴇ ᴏʀ Aᴅᴍɪɴs] - Iғ ᴇᴠᴇʀʏᴏɴᴇ, ᴀɴʏᴏɴᴇ  ɪɴ ʏᴏᴜ ɢʀᴏᴜᴘ ᴡɪʟʟ ʙᴇ ᴀʙʟᴇ ᴛᴏ ᴜsᴇ ᴀᴅᴍɪɴ ᴄᴏᴍᴍᴀɴᴅ (ʟɪᴋᴇ /skip, /stop etc)
-3 **Pʟᴀʏ Tʏᴘᴇ** [Eᴠᴇʀʏᴏɴᴇ ᴏʀ Aᴅᴍɪɴs] - Iғ ᴀᴅᴍɪɴs, ᴏɴʟʏ ɢʀᴏᴜᴘ ᴀᴅᴍɪɴs ᴄᴀɴ ᴘʟᴀʏ ᴍᴜsɪᴄ ᴏɴ ᴠᴏɪᴄᴇ ᴄʜᴀᴛ.
-"""
+    keyboard = private_help_panel(_)
+    await message.reply_photo(
+        photo=chat_photo,
+        caption=_["help_2"],
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+async def help_parser(name, keyboard=None):
+    if not keyboard:
+        keyboard = InlineKeyboardMarkup(paginate_modules(0, HELPABLE, "help"))
+    return keyboard
+
+
+@app.on_callback_query(filters.regex(r"help_(.*?)"))
+async def help_button(client, query):
+    home_match = re.match(r"help_home\((.+?)\)", query.data)
+    mod_match = re.match(r"help_module\((.+?),(.+?)\)", query.data)
+    prev_match = re.match(r"help_prev\((.+?)\)", query.data)
+    next_match = re.match(r"help_next\((.+?)\)", query.data)
+    back_match = re.match(r"help_back\((\d+)\)", query.data)
+    create_match = re.match(r"help_create", query.data)
+    language = await get_lang(query.message.chat.id)
+    _ = get_string(language)
+    top_text = _["help_1"]
+
+    if mod_match:
+        module = mod_match.group(1)
+        prev_page_num = int(mod_match.group(2))
+        text = (
+            f"<b><u>Hᴇʀᴇ Is Tʜᴇ Hᴇʟᴘ Fᴏʀ {HELPABLE[module].__MODULE__}:</u></b>\n"
+            + HELPABLE[module].__HELP__
+        )
+
+        key = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        text="↪ ʙᴀᴄᴋ", callback_data=f"help_back({prev_page_num})"
+                    ),
+                    InlineKeyboardButton(text="🔄 ᴄʟᴏsᴇ", callback_data="close"),
+                ],
+            ]
+        )
+
+        await query.message.edit(
+            text=text,
+            reply_markup=key,
+            disable_web_page_preview=True,
+        )
+
+    elif home_match:
+        await app.send_message(
+            query.from_user.id,
+            text=home_text_pm,
+            reply_markup=InlineKeyboardMarkup(out),
+        )
+        await query.message.delete()
+
+    elif prev_match:
+        curr_page = int(prev_match.group(1))
+        await query.message.edit(
+            text=top_text,
+            reply_markup=InlineKeyboardMarkup(
+                paginate_modules(curr_page, HELPABLE, "help")
+            ),
+            disable_web_page_preview=True,
+        )
+
+    elif next_match:
+        next_page = int(next_match.group(1))
+        await query.message.edit(
+            text=top_text,
+            reply_markup=InlineKeyboardMarkup(
+                paginate_modules(next_page, HELPABLE, "help")
+            ),
+            disable_web_page_preview=True,
+        )
+
+    elif back_match:
+        prev_page_num = int(back_match.group(1))
+        await query.message.edit(
+            text=top_text,
+            reply_markup=InlineKeyboardMarkup(
+                paginate_modules(prev_page_num, HELPABLE, "help")
+            ),
+            disable_web_page_preview=True,
+        )
+
+    elif create_match:
+        keyboard = InlineKeyboardMarkup(paginate_modules(0, HELPABLE, "help"))
+
+        await query.message.edit(
+            text=top_text,
+            reply_markup=keyboard,
+            disable_web_page_preview=True,
+        )
+
+    await client.answer_callback_query(query.id)
+
+
+# ===================================
+
+from pyrogram import Client, filters
+from pyrogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+
+from config import BANNED_USERS
+from strings import helpers
+from ChampuMusic import app
+from ChampuMusic.utils.decorators.language import languageCB
+
+
+@app.on_callback_query(filters.regex("music_callback") & ~BANNED_USERS)
+@languageCB
+async def music_helper_cb(client, CallbackQuery, _):
+
+    callback_data = CallbackQuery.data.strip()
+
+    cb = callback_data.split(None, 1)[1]
+
+    keyboard = back_to_music(_)
+
+    if cb == "hb1":
+
+        await CallbackQuery.edit_message_text(helpers.HELP_1, reply_markup=keyboard)
+
+    elif cb == "hb2":
+
+        await CallbackQuery.edit_message_text(helpers.HELP_2, reply_markup=keyboard)
+
+    elif cb == "hb3":
+
+        await CallbackQuery.edit_message_text(helpers.HELP_3, reply_markup=keyboard)
+
+    elif cb == "hb4":
+
+        await CallbackQuery.edit_message_text(helpers.HELP_4, reply_markup=keyboard)
+
+    elif cb == "hb5":
+
+        await CallbackQuery.edit_message_text(helpers.HELP_5, reply_markup=keyboard)
+
+    elif cb == "hb6":
+
+        await CallbackQuery.edit_message_text(helpers.HELP_6, reply_markup=keyboard)
+
+    elif cb == "hb7":
+
+        await CallbackQuery.edit_message_text(helpers.HELP_7, reply_markup=keyboard)
+
+    elif cb == "hb8":
+
+        await CallbackQuery.edit_message_text(helpers.HELP_8, reply_markup=keyboard)
+
+    elif cb == "hb9":
+
+        await CallbackQuery.edit_message_text(helpers.HELP_9, reply_markup=keyboard)
+
+    elif cb == "hb10":
+
+        await CallbackQuery.edit_message_text(helpers.HELP_10, reply_markup=keyboard)
+
+    elif cb == "hb11":
+
+        await CallbackQuery.edit_message_text(helpers.HELP_11, reply_markup=keyboard)
+
+    elif cb == "hb12":
+
+        await CallbackQuery.edit_message_text(helpers.HELP_12, reply_markup=keyboard)
+
+    elif cb == "hb13":
+
+        await CallbackQuery.edit_message_text(helpers.HELP_13, reply_markup=keyboard)
+
+    elif cb == "hb14":
+
+        await CallbackQuery.edit_message_text(helpers.HELP_14, reply_markup=keyboard)
+
+    elif cb == "hb15":
+
+        await CallbackQuery.edit_message_text(helpers.HELP_15, reply_markup=keyboard)
+
+
+@app.on_callback_query(filters.regex("management_callback") & ~BANNED_USERS)
+@languageCB
+async def management_callback_cb(client, CallbackQuery, _):
+
+    callback_data = CallbackQuery.data.strip()
+
+    cb = callback_data.split(None, 1)[1]
+
+    keyboard = back_to_management(_)
+
+    if cb == "extra":
+
+        await CallbackQuery.edit_message_text(helpers.EXTRA_1, reply_markup=keyboard)
+
+    elif cb == "hb1":
+
+        await CallbackQuery.edit_message_text(helpers.MHELP_1, reply_markup=keyboard)
+
+    elif cb == "hb2":
+
+        await CallbackQuery.edit_message_text(helpers.MHELP_2, reply_markup=keyboard)
+
+    elif cb == "hb3":
+
+        await CallbackQuery.edit_message_text(helpers.MHELP_3, reply_markup=keyboard)
+
+    elif cb == "hb4":
+
+        await CallbackQuery.edit_message_text(helpers.MHELP_4, reply_markup=keyboard)
+
+    elif cb == "hb5":
+
+        await CallbackQuery.edit_message_text(helpers.MHELP_5, reply_markup=keyboard)
+
+    elif cb == "hb6":
+
+        await CallbackQuery.edit_message_text(helpers.MHELP_6, reply_markup=keyboard)
+
+    elif cb == "hb7":
+
+        await CallbackQuery.edit_message_text(helpers.MHELP_7, reply_markup=keyboard)
+
+    elif cb == "hb8":
+
+        await CallbackQuery.edit_message_text(helpers.MHELP_8, reply_markup=keyboard)
+
+    elif cb == "hb9":
+
+        await CallbackQuery.edit_message_text(helpers.MHELP_9, reply_markup=keyboard)
+
+    elif cb == "hb10":
+
+        await CallbackQuery.edit_message_text(helpers.MHELP_10, reply_markup=keyboard)
+
+    elif cb == "hb11":
+
+        await CallbackQuery.edit_message_text(helpers.MHELP_11, reply_markup=keyboard)
+
+    elif cb == "hb12":
+
+        await CallbackQuery.edit_message_text(helpers.MHELP_12, reply_markup=keyboard)
+
+
+@app.on_callback_query(filters.regex("tools_callback") & ~BANNED_USERS)
+@languageCB
+async def tools_callback_cb(client, CallbackQuery, _):
+
+    callback_data = CallbackQuery.data.strip()
+
+    cb = callback_data.split(None, 1)[1]
+
+    keyboard = back_to_tools(_)
+
+    if cb == "ai":
+
+        await CallbackQuery.edit_message_text(helpers.AI_1, reply_markup=keyboard)
+
+    elif cb == "hb1":
+
+        await CallbackQuery.edit_message_text(helpers.THELP_1, reply_markup=keyboard)
+
+    elif cb == "hb2":
+
+        await CallbackQuery.edit_message_text(helpers.THELP_2, reply_markup=keyboard)
+
+    elif cb == "hb3":
+
+        await CallbackQuery.edit_message_text(helpers.THELP_3, reply_markup=keyboard)
+
+    elif cb == "hb4":
+
+        await CallbackQuery.edit_message_text(helpers.THELP_4, reply_markup=keyboard)
+
+    elif cb == "hb5":
+
+        await CallbackQuery.edit_message_text(helpers.THELP_5, reply_markup=keyboard)
+
+    elif cb == "hb6":
+
+        await CallbackQuery.edit_message_text(helpers.THELP_6, reply_markup=keyboard)
+
+    elif cb == "hb7":
+
+        await CallbackQuery.edit_message_text(helpers.THELP_7, reply_markup=keyboard)
+
+    elif cb == "hb8":
+
+        await CallbackQuery.edit_message_text(helpers.THELP_8, reply_markup=keyboard)
+
+    elif cb == "hb9":
+
+        await CallbackQuery.edit_message_text(helpers.THELP_9, reply_markup=keyboard)
+
+    elif cb == "hb10":
+
+        await CallbackQuery.edit_message_text(helpers.THELP_10, reply_markup=keyboard)
+
+    elif cb == "hb11":
+
+        await CallbackQuery.edit_message_text(helpers.THELP_11, reply_markup=keyboard)
+
+    elif cb == "hb12":
+
+        await CallbackQuery.edit_message_text(helpers.THELP_12, reply_markup=keyboard)
+
+
+@app.on_callback_query(filters.regex("developer"))
+async def about_callback(client: Client, callback_query: CallbackQuery):
+    buttons = [
+        [
+            InlineKeyboardButton(text="[ ᴏᴡɴᴇʀ ]", user_id=config.OWNER_ID[0]),
+            InlineKeyboardButton(
+                text="[ sᴜᴅᴏᴇʀs ]", url=f"https://t.me/{app.username}?start=sudo"
+            ),
+        ],
+        [
+            InlineKeyboardButton(text="[ ɪɴsᴛᴀ ]", url=f"https://www.instagram.com/Shahil2877"),
+            InlineKeyboardButton(text="[ ʏᴏᴜᴛᴜʙᴇ ]", url=f"https://www.youtube.com/@TERROR-2.O"),
+        ],
+        [
+            InlineKeyboardButton(text="● ʙᴀᴄᴋ ●", callback_data="about")
+        ],  # Use a default label for the back button
+    ]
+    await callback_query.message.edit_text(
+        "✦ **ᴛʜɪs ʙᴏᴛ ɪs ᴍᴀᴅᴇ ʙʏ ᴀ sᴋɪʟʟᴇᴅ ᴅᴇᴠᴇʟᴏᴘᴇʀ ᴛᴏ ᴍᴀᴋᴇ ʏᴏᴜʀ ɢʀᴏᴜᴘ ᴇᴀsʏ ᴛᴏ ᴍᴀɴᴀɢᴇ ᴀɴᴅ ᴍᴏʀᴇ ғᴜɴ.**\n\n✦ **ᴡɪᴛʜ ᴊᴜsᴛ ᴀ ғᴇᴡ ᴄʟɪᴄᴋs, ʏᴏᴜ ᴄᴀɴ ᴄᴏɴᴛʀᴏʟ ᴇᴠᴇʀʏᴛʜɪɴɢ—ʟɪᴋᴇ sᴇᴛᴛɪɴɢ ᴜᴘ ᴏᴡɴᴇʀ sᴇᴛᴛɪɴɢs, ᴄʜᴇᴄᴋɪɴɢ sᴜᴅᴏᴇʀs, ᴀɴᴅ ᴇᴠᴇɴ ᴇxᴘʟᴏʀɪɴɢ ɪɴsᴛᴀɢʀᴀᴍ ᴀɴᴅ ʏᴏᴜᴛᴜʙᴇ.**\n\n✦ **ᴛʜᴇ ʙᴏᴛ ɪs ᴅᴇsɪɢɴᴇᴅ ᴛᴏ ʜᴇʟᴘ ʏᴏᴜ ᴍᴀɴᴀɢᴇ ʏᴏᴜʀ ɢʀᴏᴜᴘ sᴍᴏᴏᴛʜʟʏ ᴀɴᴅ ᴇɴᴊᴏʏ ᴍᴜsɪᴄ ᴛᴏᴏ. ᴊᴜsᴛ ᴜsᴇ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ᴀɴᴅ sᴇᴇ ʜᴏᴡ ᴇᴀsʏ ɪᴛ ɪs!**",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+
+@app.on_callback_query(filters.regex("feature"))
+async def feature_callback(client: Client, callback_query: CallbackQuery):
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                text="● ᴛᴀᴘ ʜᴇʀᴇ ᴛᴏ ᴀᴅᴅ ᴍᴇ ●",
+                url=f"https://t.me/{app.username}?startgroup=true",
+            ),
+        ],
+        [
+            InlineKeyboardButton(text="˹ᴍᴜsɪᴄ˼", callback_data="music"),
+            InlineKeyboardButton(text="˹ᴍᴧɴᴧɢᴍᴇɴᴛ˼", callback_data="management"),
+        ],
+        [
+            InlineKeyboardButton(text="˹ᴛᴏᴏʟs˼", callback_data="tools"),
+            InlineKeyboardButton(text="˹ᴧʟʟ˼", callback_data="settings_back_helper"),
+        ],
+        [InlineKeyboardButton(text="✯ ʜᴏᴍᴇ ✯", callback_data="go_to_start")],
+    ]
+    k = f"""**✨ ᴍᴇᴇᴛ {app.mention} !\n\n━━━━━━━━━━━━━━━\n🎶 ɪ’ᴍ ᴀ ᴍᴀɴᴀɢᴇᴍᴇɴᴛ | ᴍᴜsɪᴄ ʙᴏᴛ\n\n🚀 ɴᴏ ʟᴀɢ, ɴᴏ ᴀᴅs, ɴᴏ ᴘʀᴏᴍᴏᴛɪᴏɴs\n🎧 𝟸𝟺/𝟽 ᴜᴘᴛɪᴍᴇ ᴡɪᴛʜ ᴛʜᴇ ʙᴇsᴛ sᴏᴜɴᴅ ǫᴜᴀʟɪᴛʏ\n💡 ᴛᴀᴘ ᴛʜᴇ ʜᴇʟᴘ ʙᴜᴛᴛᴏɴ ᴛᴏ ᴇxᴘʟᴏʀᴇ ᴍʏ ᴍᴏᴅᴜʟᴇs ᴀɴᴅ ᴄᴏᴍᴍᴀɴᴅs!\n\n━━━━━━━━━━━━━━━\n❖ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ➥ <a href=https://t.me/ShahilBotsList>𓆩 ˹𝖲𝗁𝖺𝗁𝗂𝗅 ✘ 𝖡𝗈𝗍𝗌˼ 𓆪</a></b></blockquote>**"""
+    await callback_query.message.edit_text(
+        text=k, reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+@app.on_callback_query(filters.regex("music"))
+async def music_callback(client: Client, callback_query: CallbackQuery):
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(text="Aᴅᴍɪɴ", callback_data="music_callback hb1"),
+                InlineKeyboardButton(text="Aᴜᴛʜ", callback_data="music_callback hb2"),
+                InlineKeyboardButton(
+                    text="Bʀᴏᴀᴅᴄᴀsᴛ", callback_data="music_callback hb3"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Bʟ-Cʜᴀᴛ", callback_data="music_callback hb4"
+                ),
+                InlineKeyboardButton(
+                    text="Bʟ-Usᴇʀ", callback_data="music_callback hb5"
+                ),
+                InlineKeyboardButton(text="C-Pʟᴀʏ", callback_data="music_callback hb6"),
+            ],
+            [
+                InlineKeyboardButton(text="G-Bᴀɴ", callback_data="music_callback hb7"),
+                InlineKeyboardButton(text="Lᴏᴏᴘ", callback_data="music_callback hb8"),
+                InlineKeyboardButton(
+                    text="Mᴀɪɴᴛᴇɴᴀɴᴄᴇ", callback_data="music_callback hb9"
+                ),
+            ],
+            [
+                InlineKeyboardButton(text="Pɪɴɢ", callback_data="music_callback hb10"),
+                InlineKeyboardButton(text="Pʟᴀʏ", callback_data="music_callback hb11"),
+                InlineKeyboardButton(
+                    text="Sʜᴜғғʟᴇ", callback_data="music_callback hb12"
+                ),
+            ],
+            [
+                InlineKeyboardButton(text="Sᴇᴇᴋ", callback_data="music_callback hb13"),
+                InlineKeyboardButton(text="Sᴏɴɢ", callback_data="music_callback hb14"),
+                InlineKeyboardButton(text="Sᴘᴇᴇᴅ", callback_data="music_callback hb15"),
+            ],
+            [InlineKeyboardButton(text="✯ ʙᴀᴄᴋ ✯", callback_data=f"feature")],
+        ]
+    )
+
+    await callback_query.message.edit(
+        f"``**Cʟɪᴄᴋ ᴏɴ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ғᴏʀ ᴍᴏʀᴇ ɪɴғᴏʀᴍᴀᴛɪᴏɴ.  Iғ ʏᴏᴜ'ʀᴇ ғᴀᴄɪɴɢ ᴀɴʏ ᴘʀᴏʙʟᴇᴍ ʏᴏᴜ ᴄᴀɴ ᴀsᴋ ɪɴ [sᴜᴘᴘᴏʀᴛ ᴄʜᴀᴛ.](t.me/Shahilali5Club)**\n\n**Aʟʟ ᴄᴏᴍᴍᴀɴᴅs ᴄᴀɴ ʙᴇ ᴜsᴇᴅ ᴡɪᴛʜ: /**``",
+        reply_markup=keyboard,
+    )
+
+
+@app.on_callback_query(filters.regex("management"))
+async def management_callback(client: Client, callback_query: CallbackQuery):
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    text="єxᴛʀᴧ", callback_data="management_callback extra"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="ʙᴧη", callback_data="management_callback hb1"
+                ),
+                InlineKeyboardButton(
+                    text="ᴋɪᴄᴋs", callback_data="management_callback hb2"
+                ),
+                InlineKeyboardButton(
+                    text="ϻυᴛє", callback_data="management_callback hb3"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="ᴘɪη", callback_data="management_callback hb4"
+                ),
+                InlineKeyboardButton(
+                    text="sᴛᴧғғ", callback_data="management_callback hb5"
+                ),
+                InlineKeyboardButton(
+                    text="sєᴛ υᴘ", callback_data="management_callback hb6"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="zσϻʙɪє", callback_data="management_callback hb7"
+                ),
+                InlineKeyboardButton(
+                    text="ɢᴧϻє", callback_data="management_callback hb8"
+                ),
+                InlineKeyboardButton(
+                    text="ɪϻᴘσsᴛєʀ", callback_data="management_callback hb9"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="sᴧηɢ ϻᴧᴛᴧ", callback_data="management_callback hb10"
+                ),
+                InlineKeyboardButton(
+                    text="ᴛʀᴧηsʟᴧᴛє", callback_data="management_callback hb11"
+                ),
+                InlineKeyboardButton(
+                    text="ᴛ-ɢʀᴧᴘʜ", callback_data="management_callback hb12"
+                ),
+            ],
+            [InlineKeyboardButton(text="✯ ʙᴀᴄᴋ ✯", callback_data=f"feature")],
+        ]
+    )
+
+    await callback_query.message.edit(
+        f"``**Cʟɪᴄᴋ ᴏɴ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ғᴏʀ ᴍᴏʀᴇ ɪɴғᴏʀᴍᴀᴛɪᴏɴ.  Iғ ʏᴏᴜ'ʀᴇ ғᴀᴄɪɴɢ ᴀɴʏ ᴘʀᴏʙʟᴇᴍ ʏᴏᴜ ᴄᴀɴ ᴀsᴋ ɪɴ [sᴜᴘᴘᴏʀᴛ ᴄʜᴀᴛ.](t.me/Shahilali5Club)**\n\n**Aʟʟ ᴄᴏᴍᴍᴀɴᴅs ᴄᴀɴ ʙᴇ ᴜsᴇᴅ ᴡɪᴛʜ: /**``",
+        reply_markup=keyboard,
+    )
+
+
+@app.on_callback_query(filters.regex("tools"))
+async def tools_callback(client: Client, callback_query: CallbackQuery):
+    keyboard = InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton(text="ᴄʜᴧᴛɢᴘᴛ", callback_data="tools_callback ai")],
+            [
+                InlineKeyboardButton(text="ɢσσɢʟє", callback_data="tools_callback hb1"),
+                InlineKeyboardButton(
+                    text="ᴛᴛs-ᴠσɪᴄє", callback_data="tools_callback hb2"
+                ),
+                InlineKeyboardButton(text="ɪηꜰσ", callback_data="tools_callback hb3"),
+            ],
+            [
+                InlineKeyboardButton(text="ғσηᴛ", callback_data="tools_callback hb4"),
+                InlineKeyboardButton(text="ϻᴧᴛʜ", callback_data="tools_callback hb5"),
+                InlineKeyboardButton(text="ᴛᴧɢᴧʟʟ", callback_data="tools_callback hb6"),
+            ],
+            [
+                InlineKeyboardButton(text="ɪϻᴧɢє", callback_data="tools_callback hb7"),
+                InlineKeyboardButton(text="ʜᴧsᴛᴧɢ", callback_data="tools_callback hb8"),
+                InlineKeyboardButton(
+                    text="sᴛɪᴄᴋєʀs", callback_data="tools_callback hb9"
+                ),
+            ],
+            [
+                InlineKeyboardButton(text="ғυη", callback_data="tools_callback hb10"),
+                InlineKeyboardButton(
+                    text="ǫυσᴛʟʏ", callback_data="tools_callback hb11"
+                ),
+                InlineKeyboardButton(
+                    text="ᴛʀ - ᴅʜ", callback_data="tools_callback hb12"
+                ),
+            ],
+            [InlineKeyboardButton(text="✯ ʙᴀᴄᴋ ✯", callback_data=f"feature")],
+        ]
+    )
+
+    await callback_query.message.edit(
+        f"``**Cʟɪᴄᴋ ᴏɴ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ғᴏʀ ᴍᴏʀᴇ ɪɴғᴏʀᴍᴀᴛɪᴏɴ.  Iғ ʏᴏᴜ'ʀᴇ ғᴀᴄɪɴɢ ᴀɴʏ ᴘʀᴏʙʟᴇᴍ ʏᴏᴜ ᴄᴀɴ ᴀsᴋ ɪɴ [sᴜᴘᴘᴏʀᴛ ᴄʜᴀᴛ.](t.me/Shahilali5Club)**\n\n**Aʟʟ ᴄᴏᴍᴍᴀɴᴅs ᴄᴀɴ ʙᴇ ᴜsᴇᴅ ᴡɪᴛʜ: /**``",
+        reply_markup=keyboard,
+    )
+
+
+@app.on_callback_query(filters.regex("back_to_music"))
+async def feature_callback(client: Client, callback_query: CallbackQuery):
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                text="● ᴛᴀᴘ ʜᴇʀᴇ ᴛᴏ ᴀᴅᴅ ᴍᴇ ●",
+                url=f"https://t.me/{app.username}?startgroup=true",
+            ),
+        ],
+        [
+            InlineKeyboardButton(text="˹ᴍᴜsɪᴄ˼", callback_data="music"),
+            InlineKeyboardButton(text="˹ᴍᴧɴᴧɢᴍᴇɴᴛ˼", callback_data="management"),
+        ],
+        [
+            InlineKeyboardButton(text="˹ᴛᴏᴏʟs˼", callback_data="tools"),
+            InlineKeyboardButton(text="˹ᴧʟʟ˼", callback_data="settings_back_helper"),
+        ],
+        [InlineKeyboardButton(text="✯ ʜᴏᴍᴇ ✯", callback_data="go_to_start")],
+    ]
+    k = f"""**✨ ᴍᴇᴇᴛ {app.mention} !\n\n━━━━━━━━━━━━━━━\n🎶 ɪ’ᴍ ᴀ ᴍᴀɴᴀɢᴇᴍᴇɴᴛ | ᴍᴜsɪᴄ ʙᴏᴛ\n\n🚀 ɴᴏ ʟᴀɢ, ɴᴏ ᴀᴅs, ɴᴏ ᴘʀᴏᴍᴏᴛɪᴏɴs\n🎧 𝟸𝟺/𝟽 ᴜᴘᴛɪᴍᴇ ᴡɪᴛʜ ᴛʜᴇ ʙᴇsᴛ sᴏᴜɴᴅ ǫᴜᴀʟɪᴛʏ\n💡 ᴛᴀᴘ ᴛʜᴇ ʜᴇʟᴘ ʙᴜᴛᴛᴏɴ ᴛᴏ ᴇxᴘʟᴏʀᴇ ᴍʏ ᴍᴏᴅᴜʟᴇs ᴀɴᴅ ᴄᴏᴍᴍᴀɴᴅs!\n\n━━━━━━━━━━━━━━━\n❖ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ➥ <a href=https://t.me/ShahilBotsList>𓆩 ˹𝖲𝗁𝖺𝗁𝗂𝗅 ✘ 𝖡𝗈𝗍𝗌˼ 𓆪</a></b></blockquote>**"""
+    await callback_query.message.edit_text(
+        text=k,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+def back_to_music(_):
+    upl = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    text=_["BACK_BUTTON"],
+                    callback_data=f"music",
+                ),
+            ]
+        ]
+    )
+    return upl
+
+
+def back_to_tools(_):
+    upl = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    text=_["BACK_BUTTON"],
+                    callback_data=f"tools",
+                ),
+            ]
+        ]
+    )
+    return upl
+
+
+def back_to_management(_):
+    upl = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    text=_["BACK_BUTTON"],
+                    callback_data=f"management",
+                ),
+            ]
+        ]
+    )
+    return upl
+
+
+@app.on_callback_query(filters.regex("about"))
+async def about_callback(client: Client, callback_query: CallbackQuery):
+    buttons = [
+        [
+            InlineKeyboardButton(text="ᴅᴇᴠᴇʟᴏᴘᴇʀ", callback_data="developer"),
+            InlineKeyboardButton(text="ғᴇᴀᴛᴜʀᴇ", callback_data="feature"),
+        ],
+        [
+            InlineKeyboardButton(text="ʙᴀsɪᴄ ɢᴜɪᴅᴇ", callback_data="basic_guide"),
+            InlineKeyboardButton(text="ᴅᴏɴᴀᴛᴇ", callback_data="donate"),
+        ],
+        [InlineKeyboardButton(text="ʙᴀᴄᴋ", callback_data="go_to_start")],
+    ]
+    await callback_query.message.edit_text(
+        f"**ʜɪ ɪ ᴀᴍ {app.mention} **\n\n**ᴀ ᴘᴏᴡᴇʀғᴜʟ ᴀɴᴅ ᴀᴡᴇsᴏᴍᴇ ᴛᴇʟᴇɢʀᴀᴍ ɢʀᴏᴜᴘ ᴍᴀɴᴀɢᴇᴍᴇɴᴛ ᴀɴᴅ ᴍᴜsɪᴄ ᴘʟᴀʏᴇʀ ᴛʜᴀᴛ ɢɪᴠᴇs ʏᴏᴜ sᴘᴀᴍ-ғʀᴇᴇ ᴀɴᴅ ғᴜɴ ᴇɴᴠɪʀᴏɴᴍᴇɴᴛ ғᴏʀ ʏᴏᴜʀ ɢʀᴏᴜᴘs :)**\n\n**● ɪ ᴄᴀɴ ʀᴇsᴛʀɪᴄᴛ ᴜsᴇʀs.**\n**● ɪ ᴄᴀɴ ɢʀᴇᴇᴛ ᴜsᴇʀs ᴡɪᴛʜ ᴄᴜsᴛᴏᴍɪᴢᴀʙʟᴇ ᴡᴇʟᴄᴏᴍᴇ ᴍᴇssᴀɢᴇs ᴀɴᴅ ᴇᴠᴇɴ sᴇᴛ ᴀ ɢʀᴏᴜᴘ's ʀᴜʟᴇs.**\n**● ɪ ʜᴀᴠᴇ ᴀ ᴍᴜsɪᴄ ᴘʟᴀʏᴇʀ sʏsᴛᴇᴍ.**\n**● ɪ ʜᴀᴠᴇ ᴀʟᴍᴏsᴛ ᴀʟʟ ᴀᴡᴀɪᴛᴇᴅ ɢʀᴏᴜᴘ ᴍᴀɴᴀɢɪɴɢ ғᴇᴀᴛᴜʀᴇs ʟɪᴋᴇ ʙᴀɴ, ᴍᴜᴛᴇ, ᴡᴇʟᴄᴏᴍᴇ, ᴋɪᴄᴋ, ғᴇᴅᴇʀᴀᴛɪᴏɴ, ᴀɴᴅ ᴍᴀɴʏ ᴍᴏʀᴇ.**\n**● ɪ ʜᴀᴠᴇ ᴀ ɴᴏᴛᴇ-ᴋᴇᴇᴘɪɴɢ sʏsᴛᴇᴍ, ʙʟᴀᴄᴋʟɪsᴛs, ᴀɴᴅ ᴇᴠᴇɴ ᴘʀᴇᴅᴇᴛᴇʀᴍɪɴᴇᴅ ʀᴇᴘʟɪᴇs ᴏɴ ᴄᴇʀᴛᴀɪɴ ᴋᴇʏᴡᴏʀᴅs.**\n**● ɪ ᴄʜᴇᴄᴋ ғᴏʀ ᴀᴅᴍɪɴs' ᴘᴇʀᴍɪssɪᴏɴs ʙᴇғᴏʀᴇ ᴇxᴇᴄᴜᴛɪɴɢ ᴀɴʏ ᴄᴏᴍᴍᴀɴᴅ ᴀɴᴅ ᴍᴏʀᴇ sᴛᴜғғ.**\n\n**➻ ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ᴍᴏʀᴇ ᴀʙᴏᴜᴛ ʙᴏᴛ .**",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+
+# If the back button has different meanings in various panels, you can set different callbacks
+@app.on_callback_query(filters.regex("support"))
+async def back_button_callback(client: Client, callback_query: CallbackQuery):
+    keyboard = [
+        [
+            InlineKeyboardButton(text="ᴏᴡɴᴇʀ", user_id=config.OWNER_ID[0]),
+            InlineKeyboardButton(
+                text="ɢɪᴛʜᴜʙ",
+                url="https://github.com/Shahilali5",
+            ),
+        ],
+        [
+            InlineKeyboardButton(text="ɢʀᴏᴜᴘ", url=f"{config.SUPPORT_GROUP}"),
+            InlineKeyboardButton(text="ᴄʜᴀɴɴᴇʟ", url=f"{config.SUPPORT_CHANNEL}"),
+        ],
+        [InlineKeyboardButton(text="✯ ʜᴏᴍᴇ ✯", callback_data="go_to_start")],
+    ]
+
+    await callback_query.message.edit_text(
+        "**๏ ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ᴍᴏʀᴇ ᴀʙᴏᴜᴛ ᴍᴇ**\n\n**ɪғ ʏᴏᴜ ғɪɴᴅ ᴀɴʏ ᴇʀʀᴏʀ ᴏʀ ʙᴜɢ ᴏɴ ʙᴏᴛ ᴏʀ ᴡᴀɴᴛ ᴛᴏ ɢɪᴠᴇ ᴀɴʏ ғᴇᴇᴅʙᴀᴄᴋ ᴀʙᴏᴜᴛ ᴛʜᴇ ʙᴏᴛ ᴛʜᴇɴ ʏᴏᴜ ᴀʀᴇ ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ sᴜᴘᴘᴏʀᴛ ᴄʜᴀᴛ  (✿◠‿◠)**",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+@app.on_callback_query(filters.regex("donate"))
+async def settings_back_callback(client: Client, callback_query: CallbackQuery):
+    close = [[InlineKeyboardButton(text="✯ ᴄʟᴏsᴇ ✯", callback_data="close")]]
+    await callback_query.message.reply_photo(
+        photo="https://te.legra.ph/file/cf56ca01fb8f0782fb094-b76a9489b7cdf96e20.jpg",
+        caption=f"**sᴜᴘᴘᴏʀᴛ ᴍʏ ᴄᴏᴅɪɴɢ ᴊᴏᴜʀɴᴇʏ ʙʏ ᴅᴏɴᴀᴛɪɴɢ ᴅɪʀᴇᴄᴛʟʏ ᴛᴏ ʜᴇʟᴘ ᴇɴʜᴀɴᴄᴇ ᴍʏ ʙᴏᴛ's ғᴇᴀᴛᴜʀᴇs ᴀɴᴅ ᴅᴇᴠᴇʟᴏᴘᴍᴇɴᴛ.**\n\n**ʏᴏᴜʀ ᴄᴏɴᴛʀɪʙᴜᴛɪᴏɴ ᴡɪʟʟ ᴅɪʀᴇᴄᴛʟʏ ғᴜɴᴅ ᴛʜᴇ ᴄʀᴇᴀᴛɪᴏɴ ᴏғ ɪɴɴᴏᴠᴀᴛɪᴠᴇ, ᴜsᴇʀ-ғʀɪᴇɴᴅʟʏ ᴛᴏᴏʟs ᴀɴᴅ ᴇxᴄɪᴛɪɴɢ ʙᴏᴛ ᴄᴀᴘᴀʙɪʟɪᴛɪᴇs.**\n\n**sɪᴍᴘʟʏ sᴄᴀɴ ᴛʜᴇ ᴄᴏᴅᴇ ᴀɴᴅ ᴍᴀᴋᴇ ᴀ ᴘᴀʏᴍᴇɴᴛ—ɴᴏ ʜᴀssʟᴇ, ᴊᴜsᴛ ᴀ ǫᴜɪᴄᴋ ᴡᴀʏ ᴛᴏ sᴜᴘᴘᴏʀᴛ ᴀɴᴅ ʜᴇʟᴘ ʙʀɪɴɢ ɴᴇᴡ ғᴇᴀᴛᴜʀᴇs ᴛᴏ ʟɪғᴇ.**\n\n**ᴇᴠᴇʀʏ ᴅᴏɴᴀᴛɪᴏɴ, ʙɪɢ ᴏʀ sᴍᴀʟʟ, ɢᴏᴇs ᴀ ʟᴏɴɢ ᴡᴀʏ ɪɴ ᴘᴜsʜɪɴɢ ᴛʜɪs ᴘʀᴏᴊᴇᴄᴛ ғᴏʀᴡᴀʀᴅ. ᴛʜᴀɴᴋ ʏᴏᴜ ғᴏʀ ʙᴇɪɴɢ ᴀ ᴘᴀʀᴛ ᴏғ ᴛʜɪs ᴇxᴄɪᴛɪɴɢ ᴊᴏᴜʀɴᴇʏ!**",
+        reply_markup=InlineKeyboardMarkup(close),
+    )
+
+
+@app.on_callback_query(filters.regex("basic_guide"))
+async def settings_back_callback(client: Client, callback_query: CallbackQuery):
+    keyboard = [[InlineKeyboardButton(text="✯ ʙᴀᴄᴋ ✯", callback_data="about")]]
+    guide_text = f"**ʜᴇʏ! ᴛʜɪs ɪs ᴀ ǫᴜɪᴄᴋ ᴀɴᴅ sɪᴍᴘʟᴇ ɢᴜɪᴅᴇ ᴛᴏ ᴜsɪɴɢ** {app.mention} **🎉**\n\n**1. ᴄʟɪᴄᴋ ᴏɴ ᴛʜᴇ 'ᴀᴅᴅ ᴍᴇ ᴛᴏ ʏᴏᴜʀ ᴄʟᴀɴ' ʙᴜᴛᴛᴏɴ.**\n**2. sᴇʟᴇᴄᴛ ʏᴏᴜʀ ɢʀᴏᴜᴘ ɴᴀᴍᴇ.**\n**3. ɢʀᴀɴᴛ ᴛʜᴇ ʙᴏᴛ ᴀʟʟ ɴᴇᴄᴇssᴀʀʏ ᴘᴇʀᴍɪssɪᴏɴs ғᴏʀ sᴍᴏᴏᴛʜ ᴀɴᴅ ғᴜʟʟ ғᴜɴᴄᴛɪᴏɴᴀʟɪᴛʏ.**\n\n**ᴛᴏ ᴀᴄᴄᴇss ᴄᴏᴍᴍᴀɴᴅs, ʏᴏᴜ ᴄᴀɴ ᴄʜᴏᴏsᴇ ʙᴇᴛᴡᴇᴇɴ ᴍᴜsɪᴄ ᴏʀ ᴍᴀɴᴀɢᴇᴍᴇɴᴛ ᴘʀᴇғᴇʀᴇɴᴄᴇs.**\n**ɪғ ʏᴏᴜ sᴛɪʟʟ ғᴀᴄᴇ ᴀɴʏ ɪssᴜᴇs, ғᴇᴇʟ ғʀᴇᴇ ᴛᴏ ʀᴇᴀᴄʜ ᴏᴜᴛ ғᴏʀ sᴜᴘᴘᴏʀᴛ ✨**"
+    await callback_query.message.edit_text(
+        text=guide_text, reply_markup=InlineKeyboardMarkup(keyboard)
+    )
